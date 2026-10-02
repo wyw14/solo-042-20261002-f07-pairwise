@@ -35,7 +35,11 @@ func (q *RetryQueue) Schedule(alarm model.Alarm) {
 	q.items[alarm.ID] = RetryItem{Alarm: alarm, NextAttempt: q.now().Add(q.interval).UTC()}
 }
 
-func (q *RetryQueue) RunDue(ctx context.Context, dispatcher *Dispatcher) []error {
+// RunDue retries every alarm whose next attempt is due. When onUpdate is
+// non-nil it is invoked after each attempt — success or failure — with the
+// alarm carrying the freshest per-channel results, so callers can persist and
+// serve the most recent delivery outcome.
+func (q *RetryQueue) RunDue(ctx context.Context, dispatcher *Dispatcher, onUpdate func(model.Alarm)) []error {
 	q.mu.Lock()
 	due := make([]RetryItem, 0)
 	for _, item := range q.items {
@@ -48,6 +52,9 @@ func (q *RetryQueue) RunDue(ctx context.Context, dispatcher *Dispatcher) []error
 	for _, item := range due {
 		results, err := dispatcher.Retry(ctx, item.Alarm, item.Alarm.Channels)
 		item.Alarm = item.Alarm.WithChannels(results, q.now())
+		if onUpdate != nil {
+			onUpdate(item.Alarm)
+		}
 		q.mu.Lock()
 		if err == nil {
 			delete(q.items, item.Alarm.ID)

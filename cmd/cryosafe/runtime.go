@@ -235,7 +235,11 @@ func (r *runtime) run(ctx context.Context) error {
 			}
 			return err
 		case <-ticker.C:
-			_ = r.retryQueue.RunDue(ctx, r.dispatcher)
+			_ = r.retryQueue.RunDue(ctx, r.dispatcher, func(updated model.Alarm) {
+				if err := r.alarmService.RecordDelivery(updated); err != nil {
+					slog.Error("failed to persist alarm delivery retry", "alarm_id", updated.ID, "error", err)
+				}
+			})
 			if pending := len(r.retryQueue.Pending()); pending > 0 {
 				slog.Warn("alarm notifications awaiting retry", "count", pending)
 			}

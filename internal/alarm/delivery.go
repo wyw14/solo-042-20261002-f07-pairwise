@@ -38,16 +38,31 @@ func (s *DeliveryService) Deliver(ctx context.Context, alarm model.Alarm) (model
 	alarm.State = model.AlarmDispatching
 	results, dispatchErr := s.dispatcher.Dispatch(ctx, alarm)
 	alarm = alarm.WithChannels(results, s.now())
+	persisted, err := s.record(alarm)
+	if err != nil {
+		return model.Alarm{}, err
+	}
+	if dispatchErr != nil {
+		s.retries.Schedule(alarm)
+		return persisted, dispatchErr
+	}
+	return persisted, nil
+}
+
+// Record persists a delivery snapshot produced outside Deliver — currently
+// the results of a scheduled notification retry — so the latest per-channel
+// outcome survives restarts and can be served by query responses.
+func (s *DeliveryService) Record(alarm model.Alarm) (model.Alarm, error) {
+	return s.record(alarm)
+}
+
+func (s *DeliveryService) record(alarm model.Alarm) (model.Alarm, error) {
 	event, err := model.NewEvent("alarms", "alarm.delivery", alarm.ID.String(), alarm, s.now())
 	if err != nil {
 		return model.Alarm{}, err
 	}
 	if _, err := s.journal.Append(event); err != nil {
 		return model.Alarm{}, err
-	}
-	if dispatchErr != nil {
-		s.retries.Schedule(alarm)
-		return alarm, dispatchErr
 	}
 	return alarm, nil
 }

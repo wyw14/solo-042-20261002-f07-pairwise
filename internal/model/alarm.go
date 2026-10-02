@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -90,4 +91,27 @@ func (a Alarm) Clear(now time.Time) Alarm {
 	a.State = AlarmCleared
 	a.UpdatedAt = now.UTC()
 	return a
+}
+
+// LatestDeliveries returns the most recent dispatch result for each
+// notification channel. When a channel appears more than once the attempt
+// with the latest AttemptedAt wins. Results are ordered by channel name so
+// the expansion is stable across pages.
+func (a Alarm) LatestDeliveries() []ChannelResult {
+	if len(a.Channels) == 0 {
+		return []ChannelResult{}
+	}
+	latest := make(map[string]ChannelResult, len(a.Channels))
+	for _, result := range a.Channels {
+		current, ok := latest[result.Channel]
+		if !ok || result.Attempted.After(current.Attempted) {
+			latest[result.Channel] = result
+		}
+	}
+	results := make([]ChannelResult, 0, len(latest))
+	for _, result := range latest {
+		results = append(results, result)
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Channel < results[j].Channel })
+	return results
 }
