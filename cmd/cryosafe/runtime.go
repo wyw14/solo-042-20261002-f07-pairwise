@@ -190,6 +190,7 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 	if err := alarm.NewRecovery(store, alarmService).Restore(); err != nil {
 		return nil, err
 	}
+	retryQueue.SetResultSink(alarmService.RecordRetryResult)
 	suppressions := alarm.NewSuppressionService(store, now)
 	healthService := monitor.NewHealthService(ingestor, circuitHealth, probeMonitor, now)
 

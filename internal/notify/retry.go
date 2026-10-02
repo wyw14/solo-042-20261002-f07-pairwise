@@ -20,6 +20,7 @@ type RetryQueue struct {
 	items    map[uuid.UUID]RetryItem
 	interval time.Duration
 	now      func() time.Time
+	onResult func(model.Alarm)
 }
 
 func NewRetryQueue(interval time.Duration, now func() time.Time) *RetryQueue {
@@ -27,6 +28,14 @@ func NewRetryQueue(interval time.Duration, now func() time.Time) *RetryQueue {
 		now = time.Now
 	}
 	return &RetryQueue{items: make(map[uuid.UUID]RetryItem), interval: interval, now: now}
+}
+
+// SetResultSink registers a callback invoked with the alarm after every retry
+// attempt, carrying the latest per-channel delivery results.
+func (q *RetryQueue) SetResultSink(sink func(model.Alarm)) {
+	q.mu.Lock()
+	q.onResult = sink
+	q.mu.Unlock()
 }
 
 func (q *RetryQueue) Schedule(alarm model.Alarm) {
@@ -57,7 +66,11 @@ func (q *RetryQueue) RunDue(ctx context.Context, dispatcher *Dispatcher) []error
 			q.items[item.Alarm.ID] = item
 			errorsFound = append(errorsFound, err)
 		}
+		sink := q.onResult
 		q.mu.Unlock()
+		if sink != nil {
+			sink(item.Alarm)
+		}
 	}
 	return errorsFound
 }
